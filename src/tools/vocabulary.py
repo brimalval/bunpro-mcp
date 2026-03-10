@@ -7,7 +7,11 @@ from typing import Final, cast
 from mcp.server.fastmcp import FastMCP
 from pydantic import ValidationError
 
-from src.api_client import BunproClient
+from src.api_client import (
+    BunproClient,
+    BunproNotFoundError,
+    BunproUnexpectedStatusError,
+)
 from src.types.bunpro import (
     BunproSearchResponse,
     BunproUserStatsResponse,
@@ -43,6 +47,60 @@ def _trim_results(payload: dict[str, object], limit: int) -> dict[str, object]:
     if isinstance(results, list):
         return {**payload, "results": results[:limit]}
     return payload
+
+
+def _is_search_fallback_error(error: BunproUnexpectedStatusError) -> bool:
+    return str(error) == "Unexpected status 500"
+
+
+def _first_string(value: object) -> str | None:
+    if not isinstance(value, list):
+        return None
+    for item in cast(list[object], value):
+        if isinstance(item, str) and item:
+            return item
+    return None
+
+
+def _build_vocab_fallback_hit(
+    query: str, payload: dict[str, object]
+) -> dict[str, object]:
+    vocab = payload.get("vocab")
+    vocab_data = cast(dict[str, object], vocab) if isinstance(vocab, dict) else {}
+    title = _first_string(vocab_data.get("japanese")) or query
+    excerpt = _first_string(vocab_data.get("english"))
+    slug = payload.get("slug") or vocab_data.get("slug") or query
+    hit_id = payload.get("id") or vocab_data.get("id") or slug
+
+    return {
+        "id": hit_id,
+        "slug": slug,
+        "type": "vocab",
+        "title": title,
+        "excerpt": excerpt,
+        "meta": {"source": "reviewables/vocab"},
+        "vocab_detail": payload,
+    }
+
+
+async def _search_vocab_fallback_payload(
+    client: BunproClient, query: str
+) -> dict[str, object]:
+    try:
+        vocab_payload = await client.request_json(
+            "GET", f"{_VOCAB_DETAIL_PATH}/{query}"
+        )
+    except BunproNotFoundError:
+        return {"query": query, "results": []}
+
+    if not isinstance(vocab_payload, dict):
+        raise RuntimeError("Unexpected Bunpro vocabulary payload shape")
+
+    vocab_payload_dict = cast(dict[str, object], vocab_payload)
+    return {
+        "query": query,
+        "results": [_build_vocab_fallback_hit(query, vocab_payload_dict)],
+    }
 
 
 async def get_vocab_level() -> dict[str, object]:
@@ -108,7 +166,16 @@ async def search_vocab(
 
     limit = _normalize_limit(result_limit)
     async with _bunpro_client() as client:
-        payload = await client.request_json("POST", _SEARCH_PATH, json={"query": query})
+        try:
+            payload = await client.request_json(
+                "POST", _SEARCH_PATH, json={"query": query}
+            )
+        except BunproNotFoundError:
+            payload = await _search_vocab_fallback_payload(client, query)
+        except BunproUnexpectedStatusError as exc:
+            if not _is_search_fallback_error(exc):
+                raise
+            payload = await _search_vocab_fallback_payload(client, query)
 
     if not isinstance(payload, dict):
         raise RuntimeError("Unexpected Bunpro search payload shape")

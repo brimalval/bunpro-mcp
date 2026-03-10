@@ -85,7 +85,18 @@ async def test_vocab_tools_call_expected_endpoints(
             return httpx.Response(200, json={"jlpt": "n3"})
         if request.url.path == "/reviewables/vocab/本":
             return httpx.Response(200, json={"id": "本", "kind": "vocab"})
+        if request.url.path == "/reviewables/vocab/語":
+            return httpx.Response(
+                200,
+                json={
+                    "id": "語",
+                    "vocab": {"slug": "go", "japanese": ["語"], "english": ["word"]},
+                },
+            )
         if request.url.path == "/search/v1_1":
+            body = cast(dict[str, str], _json_body(request))
+            if body["query"] == "語":
+                return httpx.Response(404, json={"error": "missing"})
             return httpx.Response(
                 200,
                 json={"results": [{"slug": f"item-{i}"} for i in range(100)]},
@@ -97,16 +108,27 @@ async def test_vocab_tools_call_expected_endpoints(
     level_payload = await get_vocab_level()
     item_payload = await get_vocab_items("本")
     search_payload = await search_vocab("本")
+    fallback_payload = await search_vocab("語")
     search_results = search_payload["results"]
+    fallback_results = fallback_payload["results"]
     assert isinstance(search_results, list)
+    assert isinstance(fallback_results, list)
     typed_search_results = cast(list[object], search_results)
+    typed_fallback_results = cast(list[dict[str, object]], fallback_results)
 
     assert level_payload == {"jlpt": "n3"}
     assert item_payload == {"id": "本", "kind": "vocab"}
     assert len(typed_search_results) == 40
+    assert fallback_payload["query"] == "語"
+    assert len(typed_fallback_results) == 1
+    assert typed_fallback_results[0]["type"] == "vocab"
+    assert typed_fallback_results[0]["title"] == "語"
+    assert typed_fallback_results[0]["slug"] == "go"
     assert calls[0] == ("GET", "/user_stats/jlpt_progress_mixed", None)
     assert calls[1] == ("GET", "/reviewables/vocab/本", None)
     assert calls[2] == ("POST", "/search/v1_1", {"query": "本"})
+    assert calls[3] == ("POST", "/search/v1_1", {"query": "語"})
+    assert calls[4] == ("GET", "/reviewables/vocab/語", None)
 
 
 @pytest.mark.asyncio

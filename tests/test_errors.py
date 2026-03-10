@@ -44,7 +44,6 @@ def _install_mock_transport(
     [
         (401, BunproAuthenticationError),
         (403, BunproAuthenticationError),
-        (404, BunproNotFoundError),
         (502, BunproUnexpectedStatusError),
     ],
 )
@@ -61,6 +60,28 @@ async def test_search_vocab_raises_for_error_statuses(
 
     with pytest.raises(error_cls):
         _ = await search_vocab("本")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [404, 500])
+async def test_search_vocab_falls_back_to_empty_results_for_known_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+) -> None:
+    def _handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers.get("Authorization") == "Token token=dummy"
+        if request.url.path == "/search/v1_1":
+            return httpx.Response(status, json={"error": "failed"})
+        if request.url.path == "/reviewables/vocab/本":
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(500, json={"error": "unexpected"})
+
+    _install_mock_transport(monkeypatch, _handler)
+
+    payload = await search_vocab("本")
+
+    assert payload["query"] == "本"
+    assert payload["results"] == []
 
 
 @pytest.mark.asyncio
