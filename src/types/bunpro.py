@@ -105,6 +105,26 @@ class BunproQueueResponse(BunproBaseModel):
     )
 
 
+class BunproQuizIndexResponse(BunproBaseModel):
+    """Shallow response returned by the quiz index endpoint."""
+
+    review_session_id: str | None = Field(
+        None, description="Identifies the active quiz session"
+    )
+    pending_attempt: list[dict[str, object]] = Field(
+        default_factory=list, description="Pending attempt payloads"
+    )
+    pending_wrapup: list[dict[str, object]] = Field(
+        default_factory=list, description="Pending wrapup payloads"
+    )
+    total_pending_attempt_count: int | None = Field(
+        None, description="Total pending attempt count"
+    )
+    total_pending_wrapup_count: int | None = Field(
+        None, description="Total pending wrapup count"
+    )
+
+
 class BunproForecastPoint(BunproBaseModel):
     """Forecast point (daily or hourly)."""
 
