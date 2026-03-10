@@ -1,0 +1,7 @@
+{
+  "name": "bunpro-mcp-server",
+  "private": true,
+  "scripts": {
+    "server.py": "uv run server.py"
+  }
+}

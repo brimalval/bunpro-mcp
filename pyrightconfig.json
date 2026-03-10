@@ -1,0 +1,19 @@
+{
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "pythonVersion": "3.14",
+      "extraPaths": [
+        ".venv/lib/python3.14/site-packages",
+        "src"
+      ]
+    }
+  ],
+  "exclude": [
+    "skills",
+    ".sisyphus",
+    ".claude",
+    ".agents",
+    ".venv"
+  ]
+}

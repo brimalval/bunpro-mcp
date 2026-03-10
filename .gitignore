@@ -1,0 +1,23 @@
+# General Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyi
+*.egg-info/
+pip-wheel-metadata/
+pip-log.txt
+dist/
+build/
+
+# Environment and editor
+.env
+.env.*
+.venv/
+venv/
+env/
+!/.env.example
+
+# Testing/cache
+.pytest_cache/
+.mypy_cache/
