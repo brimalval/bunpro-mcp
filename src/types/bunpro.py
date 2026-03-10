@@ -108,7 +108,7 @@ class BunproQueueResponse(BunproBaseModel):
 class BunproQuizIndexResponse(BunproBaseModel):
     """Shallow response returned by the quiz index endpoint."""
 
-    review_session_id: str | None = Field(
+    review_session_id: str | int | None = Field(
         None, description="Identifies the active quiz session"
     )
     pending_attempt: list[dict[str, object]] = Field(
