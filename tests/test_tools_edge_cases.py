@@ -10,7 +10,7 @@ import pytest
 
 from src.tools.grammar import search_grammar
 from src.tools.reading import get_reading_passages
-from src.tools.review import get_review_queue
+from src.tools.review import get_study_configuration
 from src.tools.user_stats import get_srs_forecast, get_user_stats
 from src.tools.vocabulary import search_vocab
 
@@ -62,7 +62,7 @@ async def test_get_reading_passages_raises_for_missing_next_data_payload(
 
 
 @pytest.mark.asyncio
-async def test_get_review_queue_raises_for_invalid_ready_type(
+async def test_get_study_configuration_raises_for_invalid_ready_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def _handler(_request: httpx.Request) -> httpx.Response:
@@ -72,7 +72,7 @@ async def test_get_review_queue_raises_for_invalid_ready_type(
     _install_mock_transport(monkeypatch, _handler)
 
     with pytest.raises(RuntimeError, match="Invalid Bunpro review queue payload"):
-        _ = await get_review_queue()
+        _ = await get_study_configuration()
 
 
 @pytest.mark.asyncio

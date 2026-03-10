@@ -133,6 +133,35 @@ async def _fetch_reading_passages() -> list[dict[str, object]]:
 
 
 async def get_reading_passages() -> dict[str, object]:
+    """Retrieve all available Japanese reading passages from Bunpro.
+
+    Fetches the complete collection of reading comprehension passages available
+    in the user's Bunpro account. These are longer-form Japanese texts designed
+    for reading practice.
+
+    Use this tool when you need to:
+    - Browse all available reading passages
+    - Get an overview of reading practice materials
+    - Find passage IDs/slugs for specific texts
+    - Assess reading level variety in the user's library
+
+    Args:
+        None
+
+    Returns:
+        A dictionary containing:
+        - results: List of reading passage objects, each with:
+            - id: Passage identifier
+            - slug: URL-friendly identifier
+            - title: Passage title (Japanese or English)
+            - excerpt: Preview text from the passage
+            - type: Content type identifier
+            - level: Difficulty level (if available)
+        - total: Total count of passages
+        - meta: Additional metadata
+
+    Related tools: search_reading_passages (to filter passages by keyword)
+    """
     passages = await _fetch_reading_passages()
     payload: dict[str, object] = {"results": passages}
 
@@ -145,6 +174,35 @@ async def get_reading_passages() -> dict[str, object]:
 
 
 async def search_reading_passages(query: str) -> dict[str, object]:
+    """Search reading passages by keyword in Japanese or English.
+
+    Filters the user's reading passage collection by matching the query against
+    all text content (titles, excerpts, Japanese text, English translations).
+    Case-insensitive matching.
+
+    Use this tool when you need to:
+    - Find passages about a specific topic (e.g., "travel", "vacation", "りょこう")
+    - Search by Japanese vocabulary or kanji
+    - Filter passages by theme or subject matter
+    - Locate specific reading practice materials
+
+    Args:
+        query: Search term in Japanese or English. The search is case-insensitive
+            and matches against all text fields in each passage.
+
+    Returns:
+        A dictionary containing:
+        - query: The original search query
+        - results: List of up to 40 matching passages, each with:
+            - id: Passage identifier
+            - slug: URL-friendly identifier
+            - title: Passage title
+            - excerpt: Preview/snippet of the passage content
+            - type: Content type (typically "reading")
+        - meta: Additional search metadata
+
+    Related tools: get_reading_passages (to get all passages without filtering)
+    """
     passages = await _fetch_reading_passages()
     normalized_query = query.casefold()
     filtered_results = [

@@ -10,7 +10,7 @@ from typing import cast
 from src.api_client import resolve_frontend_api_token
 from src.tools.grammar import get_grammar_point, search_grammar
 from src.tools.reading import get_reading_passages, search_reading_passages
-from src.tools.review import get_due_items, get_review_queue
+from src.tools.review import get_due_count, get_study_configuration
 from src.tools.user_stats import get_jlpt_progress, get_srs_forecast, get_user_stats
 from src.tools.vocabulary import get_vocab_items, get_vocab_level, search_vocab
 
@@ -260,13 +260,13 @@ async def main() -> int:
         )
 
         _ = await _run_test(
-            "get_review_queue",
-            get_review_queue,
+            "get_study_configuration",
+            get_study_configuration,
             _queue_summary,
         )
         _ = await _run_test(
-            "get_due_items",
-            get_due_items,
+            "get_due_count",
+            get_due_count,
             _due_summary,
         )
 

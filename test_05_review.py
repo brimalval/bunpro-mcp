@@ -10,7 +10,7 @@ from pathlib import Path
 from pprint import pprint
 from typing import cast
 
-from src.tools.review import get_due_items, get_review_queue
+from src.tools.review import get_due_count, get_study_configuration
 
 EVIDENCE_LOG = Path(".sisyphus/evidence/real-api-testing/test-05-review.log")
 
@@ -36,14 +36,14 @@ def _summarize_payload(label: str, payload: dict[str, object]) -> None:
             _emit(f"   {key}: {value}")
 
 
-async def test_review_queue() -> tuple[bool, str | None]:
-    _emit("\n1. Testing get_review_queue()")
-    queue: dict[str, object] = await get_review_queue()
-    _summarize_payload("review queue", queue)
+async def test_study_configuration() -> tuple[bool, str | None]:
+    _emit("\n1. Testing get_study_configuration()")
+    queue: dict[str, object] = await get_study_configuration()
+    _summarize_payload("study configuration", queue)
 
     ready = cast(list[dict[str, object]], queue.get("ready") or [])
     future = cast(list[dict[str, object]], queue.get("future") or [])
-    pprint(queue)
+    # pprint(queue)
     queue_length = queue.get("queue_length")
 
     if queue_length == 0 and not ready and not future:
@@ -60,10 +60,10 @@ async def test_review_queue() -> tuple[bool, str | None]:
     return True, None
 
 
-async def test_due_items() -> tuple[bool, str | None]:
-    _emit("\n2. Testing get_due_items()")
-    due: dict[str, object] = await get_due_items()
-    _summarize_payload("due items", due)
+async def test_due_count() -> tuple[bool, str | None]:
+    _emit("\n2. Testing get_due_count()")
+    due: dict[str, object] = await get_due_count()
+    _summarize_payload("due count", due)
 
     upcoming = cast(list[dict[str, object]], due.get("upcoming") or [])
     total_due = due.get("total_due")
@@ -95,8 +95,8 @@ async def main() -> None:
         sys.exit(1)
 
     tests = [
-        ("Review queue", test_review_queue),
-        ("Due items", test_due_items),
+        ("Study configuration", test_study_configuration),
+        ("Due count", test_due_count),
     ]
 
     passed = 0

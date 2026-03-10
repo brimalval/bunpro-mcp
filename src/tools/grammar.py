@@ -64,7 +64,34 @@ def _resolve_grammar_id(payload: dict[str, object], query: str) -> str:
 
 
 async def search_grammar(query: str) -> dict[str, object]:
-    """Search Bunpro grammar via /search/v1_1 and return results truncated to 40 entries."""
+    """Search Bunpro's grammar database for Japanese grammar points.
+
+    Queries Bunpro's search endpoint to find grammar points matching the given
+    text. Results include grammar point titles, slugs, and excerpts for discovery.
+
+    Use this tool when you need to:
+    - Find grammar points by Japanese or English keywords (e.g., "particles", "て-form")
+    - Discover available grammar structures for a topic
+    - Get slugs/IDs for use with get_grammar_point()
+    - Browse grammar before diving into detailed explanations
+
+    Args:
+        query: Search term in Japanese or English. Examples: "particles",
+            "conditional", "potential form", "ために", "〜たい"
+
+    Returns:
+        A dictionary containing:
+        - query: The original search query
+        - results: List of up to 40 matching grammar points, each with:
+            - id: Grammar point identifier
+            - slug: URL-friendly identifier for get_grammar_point()
+            - title: Grammar point name (Japanese/English)
+            - excerpt: Brief description or usage example
+            - type: Always "grammar" for these results
+        - meta: Additional search metadata
+
+    Related tools: get_grammar_point (for full details on a specific grammar point)
+    """
 
     payload: object
     async with _bunpro_client() as client:
@@ -94,7 +121,39 @@ async def search_grammar(query: str) -> dict[str, object]:
 
 
 async def get_grammar_point(slug: str) -> dict[str, object]:
-    """Resolve a grammar ID via search and fetch detail from GET /reviewables/grammar_point/{grammarId}."""
+    """Retrieve detailed information about a specific Japanese grammar point.
+
+    Fetches the complete grammar point data including explanations, structure,
+    example sentences, and usage notes. Accepts either a numeric ID or a
+    text slug (which will be resolved via search first).
+
+    Use this tool when you need to:
+    - Get the full explanation of a grammar point
+    - See example sentences using the grammar structure
+    - Understand meaning nuances and usage contexts
+    - Review detailed Japanese grammar patterns
+
+    Args:
+        slug: Either a numeric grammar point ID (e.g., "123") or a text slug
+            (e.g., "particles-1", "te-form"). If a non-numeric slug is provided,
+            it will be searched first to resolve the ID.
+
+    Returns:
+        A dictionary containing:
+        - id: Grammar point identifier
+        - slug: URL-friendly identifier
+        - title: Grammar point name
+        - grammar_point: Core grammar data with explanations
+        - examples: List of example sentences demonstrating usage
+        - meanings: List of meaning/nuance explanations
+        - meta: Additional metadata from Bunpro
+
+    Raises:
+        RuntimeError: If the grammar point cannot be found or Bunpro search
+            is unavailable when resolving a text slug.
+
+    Related tools: search_grammar (to find grammar point slugs/IDs)
+    """
     grammar_id: str
     if slug.isdigit():
         grammar_id = slug

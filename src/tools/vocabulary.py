@@ -104,10 +104,33 @@ async def _search_vocab_fallback_payload(
 
 
 async def get_vocab_level() -> dict[str, object]:
-    """Return the mixed JLPT progress payload from Bunpro.
+    """Get vocabulary progress by JLPT level.
 
-    The pinned Bunpro spec exposes /user_stats/jlpt_progress_mixed, which is
-    the closest available representation of the overall JLPT level data.
+    Retrieves vocabulary learning progress broken down by JLPT level (N5-N1).
+    This shows how many vocabulary items have been learned at each proficiency
+    level.
+
+    Use this tool when you need to:
+    - Check vocabulary progress by JLPT level
+    - See which JLPT level to focus vocabulary study on
+    - Track vocabulary acquisition across proficiency levels
+    - Get an overview of vocabulary SRS distribution
+
+    Args:
+        None
+
+    Returns:
+        A dictionary containing:
+        - summary: Overall vocabulary statistics
+        - srs_overview: Vocabulary items grouped by JLPT level and SRS stage
+        - activity: Recent vocabulary-related activity
+        - meta: Additional JLPT vocabulary metadata
+
+    Note:
+        JLPT levels range from N5 (beginner) to N1 (advanced). This endpoint
+        focuses on vocabulary specifically, not grammar.
+
+    Related tools: get_jlpt_progress, search_vocab, get_vocab_items
     """
 
     async with _bunpro_client() as client:
@@ -125,13 +148,36 @@ async def get_vocab_level() -> dict[str, object]:
 
 
 async def get_vocab_items(vocab_slug_or_id: str) -> dict[str, object]:
-    """Return the Bunpro vocabulary detail payload for the given slug or id.
+    """Retrieve detailed information about a specific vocabulary word.
+
+    Fetches complete vocabulary data including Japanese forms, English meanings,
+    readings, example sentences, and audio URL. Use this to get full details
+    about a vocabulary item found via search.
+
+    Use this tool when you need to:
+    - Get full details for a vocabulary word
+    - See example sentences using the vocabulary
+    - Access audio pronunciation URL
+    - Review context and usage for a word
 
     Args:
-        vocab_slug_or_id: The Bunpro vocabulary slug or numeric identifier.
+        vocab_slug_or_id: The vocabulary slug (e.g., "genki-lesson-1") or
+            numeric ID from search results.
 
     Returns:
-        The raw JSON dictionary returned by /reviewables/vocab/{slugOrId}.
+        A dictionary containing:
+        - vocab: Primary vocabulary definition with:
+            - slug: URL-friendly identifier
+            - japanese: List of Japanese forms (kanji/kana)
+            - english: List of English definitions
+            - readings: List of reading variants
+            - level: JLPT level or deck identifier
+            - audio_url: Link to pronunciation audio (if available)
+            - contexts: Context sentences showing usage
+        - examples: Additional example sentences
+        - glossary: Auxiliary lookup metadata
+
+    Related tools: search_vocab (to find vocabulary slugs/IDs)
     """
 
     async with _bunpro_client() as client:
@@ -153,15 +199,38 @@ async def get_vocab_items(vocab_slug_or_id: str) -> dict[str, object]:
 async def search_vocab(
     query: str, result_limit: int | None = None
 ) -> dict[str, object]:
-    """Search Bunpro vocabulary using the pinned /search/v1_1 endpoint.
+    """Search Bunpro's vocabulary database for Japanese words.
+
+    Queries Bunpro's search endpoint to find vocabulary matching the given
+    text. Results include Japanese forms, English meanings, and slugs for
+    retrieving full details.
+
+    Use this tool when you need to:
+    - Find vocabulary by Japanese or English (e.g., "hello", "こんにちは")
+    - Discover vocabulary in a specific deck or lesson
+    - Get slugs/IDs for use with get_vocab_items()
+    - Browse vocabulary before viewing full details
 
     Args:
-        query: Free-text query to submit to Bunpro (case-sensitive).
-        result_limit: Optional cap on the number of entries in the `results` list;
-            values above 50 are clamped, values below 1 are raised to 1.
+        query: Search term in Japanese or English. Can include kanji, kana,
+            romaji, or English definitions.
+        result_limit: Maximum number of results to return (default: 40, max: 50).
+            Values outside 1-50 are clamped to valid range.
 
     Returns:
-        The Bunpro search JSON dictionary with `results` truncated to the requested limit.
+        A dictionary containing:
+        - query: The original search query
+        - results: List of matching vocabulary items, each with:
+            - id: Vocabulary identifier
+            - slug: URL-friendly identifier for get_vocab_items()
+            - title: Primary Japanese form
+            - excerpt: English definition(s)
+            - type: Always "vocab" for these results
+            - score: Relevance score
+        - meta: Additional search metadata
+
+    Related tools: get_vocab_items (for full details on a specific word),
+        get_vocab_level (for JLPT progress)
     """
 
     limit = _normalize_limit(result_limit)
