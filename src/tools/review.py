@@ -7,12 +7,13 @@ from typing import Final
 from mcp.server.fastmcp import FastMCP
 from pydantic import ValidationError
 
-from src.api_client import BunproClient
+from src.api_client import BunproClient, resolve_frontend_api_token
 from src.types.bunpro import (
     BunproDueResponse,
     BunproQueueResponse,
     BunproQuizIndexResponse,
 )
+from src.cache import get_pending_reviews_cache
 
 _REVIEW_QUEUE_PATH: Final[str] = "/user/queue"
 _DUE_ITEMS_PATH: Final[str] = "/user/due"
@@ -165,18 +166,37 @@ async def get_pending_reviews() -> dict[str, object]:
     - get_due_count(): For summary statistics only (NOT actual items)
     """
 
-    async with _bunpro_client() as client:
-        payload = await client.request_json("GET", _QUIZ_INDEX_PATH)
+    async def _fetch_reviews() -> dict[str, object]:
+        async with _bunpro_client() as client:
+            payload = await client.request_json("GET", _QUIZ_INDEX_PATH)
 
-    if not isinstance(payload, dict):
-        raise RuntimeError("Unexpected Bunpro quiz index payload shape")
+        if not isinstance(payload, dict):
+            raise RuntimeError("Unexpected Bunpro quiz index payload shape")
 
-    try:
-        validated = BunproQuizIndexResponse.model_validate(payload)
-    except ValidationError as exc:
-        raise RuntimeError("Invalid Bunpro quiz index payload") from exc
+        try:
+            validated = BunproQuizIndexResponse.model_validate(payload)
+        except ValidationError as exc:
+            raise RuntimeError("Invalid Bunpro quiz index payload") from exc
 
-    return validated.model_dump(mode="json", exclude_unset=True)
+        return validated.model_dump(mode="json", exclude_unset=True)
+
+    token = resolve_frontend_api_token()
+    if not token:
+        return await _fetch_reviews()
+
+    cache = get_pending_reviews_cache()
+    cached = cache.get(token)
+    if isinstance(cached, dict):
+        return cached
+
+    async with cache.lock_for(token):
+        cached = cache.get(token)
+        if isinstance(cached, dict):
+            return cached
+
+        result = await _fetch_reviews()
+        cache.set(token, result)
+        return result
 
 
 def register_review_tools(mcp: FastMCP) -> None:
