@@ -9,6 +9,6 @@ test("src/tools/review.py imports", async () => {
     "run",
     "python",
     "-c",
-    "import asyncio; from src.tools.review import get_review_queue; print('ok')",
+    "import asyncio; from src.tools.review import get_study_configuration, get_due_count; print('ok')",
   ]);
 });

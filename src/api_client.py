@@ -76,7 +76,7 @@ class BunproClient:
     ) -> object:
         """Perform a Bunpro request and return the parsed JSON response."""
 
-        normalized_path = path if path.startswith("/") else f"/{path}"
+        normalized_path = path.lstrip("/")
         logger.debug(
             "Bunpro request %s %s params=%s", method.upper(), normalized_path, params
         )

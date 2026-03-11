@@ -8,11 +8,32 @@ from typing import cast
 import httpx
 import pytest
 
+from src.api_client import BunproNotFoundError
 from src.tools.grammar import get_grammar_point, search_grammar
 from src.tools.reading import get_reading_passages, search_reading_passages
 from src.tools.review import get_due_count, get_study_configuration
 from src.tools.user_stats import get_jlpt_progress, get_srs_forecast, get_user_stats
 from src.tools.vocabulary import get_vocab_items, get_vocab_level, search_vocab
+
+
+def _grammar_reviewable(
+    id_value: int, slug: str, title: str | None = None
+) -> dict[str, object]:
+    return {
+        "id": id_value,
+        "type": "grammar_point",
+        "attributes": {"slug": slug, "title": title or slug},
+    }
+
+
+def _vocab_reviewable(
+    id_value: str, slug: str, title: str | None = None
+) -> dict[str, object]:
+    return {
+        "id": id_value,
+        "type": "vocab",
+        "attributes": {"slug": slug, "title": title or slug},
+    }
 
 
 def _install_mock_transport(
@@ -21,6 +42,7 @@ def _install_mock_transport(
 ) -> None:
     real_async_client = httpx.AsyncClient
     monkeypatch.setenv("BUNPRO_JWT", "dummy")
+    monkeypatch.setenv("BUNPRO_FRONTEND_API_TOKEN", "dummy")
     monkeypatch.setenv("BUNPRO_API_BASE_URL", "http://test")
 
     def _mock_async_client(**kwargs: object) -> httpx.AsyncClient:
@@ -48,10 +70,17 @@ async def test_grammar_tools_call_expected_endpoints(
     def _handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("Authorization") == "Token token=dummy"
         calls.append((request.method, request.url.path, _json_body(request)))
-        if request.url.path == "/search/v1_1":
+        if request.url.path == "/search/reviewables_v1_1":
+            body = cast(dict[str, object], _json_body(request))
+            assert body["is_searching_grammar"] is True
+            assert body["is_searching_vocab"] is False
             payload = {
-                "results": [{"grammar_point_id": 123}]
-                + [{"id": i} for i in range(100)],
+                "query": body["query"],
+                "grammar_points": {
+                    "data": [_grammar_reviewable(123, "particles-1", "Particles")]
+                    + [_grammar_reviewable(i, f"item-{i}") for i in range(100)]
+                },
+                "meta": {},
             }
             return httpx.Response(200, json=payload)
         if request.url.path == "/reviewables/grammar_point/123":
@@ -68,7 +97,16 @@ async def test_grammar_tools_call_expected_endpoints(
 
     assert len(typed_search_results) == 40
     assert detail_payload == {"id": 123, "name": "test"}
-    assert calls[0] == ("POST", "/search/v1_1", {"query": "〜ない"})
+    assert calls[0] == (
+        "POST",
+        "/search/reviewables_v1_1",
+        {
+            "query": "〜ない",
+            "options": {},
+            "is_searching_grammar": True,
+            "is_searching_vocab": False,
+        },
+    )
     assert calls[1] == ("GET", "/reviewables/grammar_point/123", None)
 
 
@@ -93,13 +131,25 @@ async def test_vocab_tools_call_expected_endpoints(
                     "vocab": {"slug": "go", "japanese": ["語"], "english": ["word"]},
                 },
             )
-        if request.url.path == "/search/v1_1":
-            body = cast(dict[str, str], _json_body(request))
+        if request.url.path == "/search/reviewables_v1_1":
+            body = cast(dict[str, object], _json_body(request))
+            assert body["is_searching_vocab"] is True
+            assert body["options"] == {}
+            assert body["is_searching_grammar"] is False
             if body["query"] == "語":
                 return httpx.Response(404, json={"error": "missing"})
             return httpx.Response(
                 200,
-                json={"results": [{"slug": f"item-{i}"} for i in range(100)]},
+                json={
+                    "query": body["query"],
+                    "vocabs": {
+                        "data": [
+                            _vocab_reviewable(f"item-{i}", f"item-{i}")
+                            for i in range(100)
+                        ]
+                    },
+                    "meta": {},
+                },
             )
         return httpx.Response(404, json={"error": "not found"})
 
@@ -108,27 +158,37 @@ async def test_vocab_tools_call_expected_endpoints(
     level_payload = await get_vocab_level()
     item_payload = await get_vocab_items("本")
     search_payload = await search_vocab("本")
-    fallback_payload = await search_vocab("語")
     search_results = search_payload["results"]
-    fallback_results = fallback_payload["results"]
     assert isinstance(search_results, list)
-    assert isinstance(fallback_results, list)
     typed_search_results = cast(list[object], search_results)
-    typed_fallback_results = cast(list[dict[str, object]], fallback_results)
+    with pytest.raises(BunproNotFoundError):
+        _ = await search_vocab("語")
 
     assert level_payload == {"jlpt": "n3"}
     assert item_payload == {"id": "本", "kind": "vocab"}
     assert len(typed_search_results) == 40
-    assert fallback_payload["query"] == "語"
-    assert len(typed_fallback_results) == 1
-    assert typed_fallback_results[0]["type"] == "vocab"
-    assert typed_fallback_results[0]["title"] == "語"
-    assert typed_fallback_results[0]["slug"] == "go"
     assert calls[0] == ("GET", "/user_stats/jlpt_progress_mixed", None)
     assert calls[1] == ("GET", "/reviewables/vocab/本", None)
-    assert calls[2] == ("POST", "/search/v1_1", {"query": "本"})
-    assert calls[3] == ("POST", "/search/v1_1", {"query": "語"})
-    assert calls[4] == ("GET", "/reviewables/vocab/語", None)
+    assert calls[2] == (
+        "POST",
+        "/search/reviewables_v1_1",
+        {
+            "query": "本",
+            "options": {},
+            "is_searching_vocab": True,
+            "is_searching_grammar": False,
+        },
+    )
+    assert calls[3] == (
+        "POST",
+        "/search/reviewables_v1_1",
+        {
+            "query": "語",
+            "options": {},
+            "is_searching_vocab": True,
+            "is_searching_grammar": False,
+        },
+    )
 
 
 @pytest.mark.asyncio

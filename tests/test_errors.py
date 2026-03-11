@@ -20,12 +20,28 @@ from src.tools.grammar import get_grammar_point, search_grammar
 from src.tools.vocabulary import search_vocab
 
 
+def _grammar_reviewable(
+    id_value: int | str,
+    slug: str,
+    title: str | None = None,
+    meaning: str | None = None,
+    nuance: str | None = None,
+) -> dict[str, object]:
+    attributes: dict[str, object] = {"slug": slug, "title": title or slug}
+    if meaning is not None:
+        attributes["meaning"] = meaning
+    if nuance is not None:
+        attributes["nuance_translation"] = nuance
+    return {"id": id_value, "type": "grammar_point", "attributes": attributes}
+
+
 def _install_mock_transport(
     monkeypatch: pytest.MonkeyPatch,
     handler: Callable[[httpx.Request], httpx.Response],
 ) -> None:
     real_async_client = httpx.AsyncClient
     monkeypatch.setenv("BUNPRO_JWT", "dummy")
+    monkeypatch.setenv("BUNPRO_FRONTEND_API_TOKEN", "dummy")
     monkeypatch.setenv("BUNPRO_API_BASE_URL", "http://test")
 
     def _mock_async_client(**kwargs: object) -> httpx.AsyncClient:
@@ -63,14 +79,25 @@ async def test_search_vocab_raises_for_error_statuses(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", [404, 500])
-async def test_search_vocab_falls_back_to_empty_results_for_known_failures(
+@pytest.mark.parametrize(
+    ("status", "error_cls"),
+    [
+        (404, BunproNotFoundError),
+        (500, BunproUnexpectedStatusError),
+    ],
+)
+async def test_search_vocab_propagates_search_errors(
     monkeypatch: pytest.MonkeyPatch,
     status: int,
+    error_cls: type[Exception],
 ) -> None:
     def _handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("Authorization") == "Token token=dummy"
-        if request.url.path == "/search/v1_1":
+        if request.url.path == "/search/reviewables_v1_1":
+            body = cast(dict[str, object], json.loads(request.content.decode("utf-8")))
+            assert body["options"] == {}
+            assert body["is_searching_vocab"] is True
+            assert body["is_searching_grammar"] is False
             return httpx.Response(status, json={"error": "failed"})
         if request.url.path == "/reviewables/vocab/本":
             return httpx.Response(404, json={"error": "missing"})
@@ -78,46 +105,154 @@ async def test_search_vocab_falls_back_to_empty_results_for_known_failures(
 
     _install_mock_transport(monkeypatch, _handler)
 
-    payload = await search_vocab("本")
-
-    assert payload["query"] == "本"
-    assert payload["results"] == []
+    with pytest.raises(error_cls):
+        _ = await search_vocab("本")
 
 
 @pytest.mark.asyncio
-async def test_get_grammar_point_propagates_detail_404(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def _handler(request: httpx.Request) -> httpx.Response:
-        assert request.headers.get("Authorization") == "Token token=dummy"
-        if request.url.path == "/reviewables/grammar_point/123":
-            return httpx.Response(404, json={"error": "missing"})
-        return httpx.Response(500, json={"error": "unexpected"})
-
-    _install_mock_transport(monkeypatch, _handler)
-
-    with pytest.raises(BunproNotFoundError):
-        _ = await get_grammar_point("123")
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("status", [404, 500])
-async def test_search_grammar_falls_back_to_empty_results_for_known_failures(
+@pytest.mark.parametrize(
+    ("status", "error_cls"),
+    [
+        (401, BunproAuthenticationError),
+        (404, BunproNotFoundError),
+        (500, BunproUnexpectedStatusError),
+    ],
+)
+async def test_get_grammar_point_propagates_detail_errors(
     monkeypatch: pytest.MonkeyPatch,
     status: int,
+    error_cls: type[Exception],
 ) -> None:
     def _handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("Authorization") == "Token token=dummy"
-        if request.url.path == "/search/v1_1":
+        if request.url.path == "/search/reviewables_v1_1":
+            payload = cast(
+                dict[str, object], json.loads(request.content.decode("utf-8"))
+            )
+            assert payload["options"] == {}
+            assert payload["is_searching_grammar"] is True
+            assert payload["is_searching_vocab"] is False
+            return httpx.Response(
+                200,
+                json={
+                    "query": "particles",
+                    "grammar_points": {
+                        "data": [_grammar_reviewable(123, "particles-1", "Particles")]
+                    },
+                    "meta": {},
+                },
+            )
+        if request.url.path == "/reviewables/grammar_point/123":
             return httpx.Response(status, json={"error": "failed"})
         return httpx.Response(500, json={"error": "unexpected"})
 
     _install_mock_transport(monkeypatch, _handler)
 
-    payload = await search_grammar("〜ない")
+    with pytest.raises(error_cls):
+        _ = await get_grammar_point("123")
 
-    assert payload["query"] == "〜ない"
-    assert payload["results"] == []
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "error_cls"),
+    [
+        (401, BunproAuthenticationError),
+        (404, BunproNotFoundError),
+        (500, BunproUnexpectedStatusError),
+    ],
+)
+async def test_search_grammar_propagates_search_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    error_cls: type[Exception],
+) -> None:
+    def _handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers.get("Authorization") == "Token token=dummy"
+        if request.url.path == "/search/reviewables_v1_1":
+            body = cast(dict[str, object], json.loads(request.content.decode("utf-8")))
+            assert body["options"] == {}
+            assert body["is_searching_grammar"] is True
+            assert body["is_searching_vocab"] is False
+            return httpx.Response(status, json={"error": "failed"})
+        return httpx.Response(500, json={"error": "unexpected"})
+
+    _install_mock_transport(monkeypatch, _handler)
+
+    with pytest.raises(error_cls):
+        _ = await search_grammar("〜ない")
+
+
+@pytest.mark.asyncio
+async def test_search_grammar_returns_parsed_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers.get("Authorization") == "Token token=dummy"
+        if request.url.path == "/search/reviewables_v1_1":
+            payload = cast(
+                dict[str, object], json.loads(request.content.decode("utf-8"))
+            )
+            assert payload["query"] == "particles"
+            assert payload["options"] == {}
+            assert payload["is_searching_grammar"] is True
+            assert payload["is_searching_vocab"] is False
+            return httpx.Response(
+                200,
+                json={
+                    "query": "particles",
+                    "grammar_points": {
+                        "data": [
+                            _grammar_reviewable(
+                                111,
+                                "particles-1",
+                                "Particles",
+                                meaning="When particles are used",
+                            )
+                        ]
+                    },
+                    "meta": {"total": 1},
+                },
+            )
+        return httpx.Response(500, json={"error": "unexpected"})
+
+    _install_mock_transport(monkeypatch, _handler)
+
+    result = await search_grammar("particles")
+    results = cast(list[dict[str, object]], result["results"])
+
+    assert result["query"] == "particles"
+    assert len(results) == 1
+    assert results[0]["slug"] == "particles-1"
+
+
+@pytest.mark.asyncio
+async def test_search_grammar_returns_empty_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers.get("Authorization") == "Token token=dummy"
+        if request.url.path == "/search/reviewables_v1_1":
+            body = cast(dict[str, object], json.loads(request.content.decode("utf-8")))
+            assert body["options"] == {}
+            assert body["is_searching_grammar"] is True
+            assert body["is_searching_vocab"] is False
+            return httpx.Response(
+                200,
+                json={
+                    "query": "ghost",
+                    "grammar_points": {"data": []},
+                    "meta": {"total": 0},
+                },
+            )
+        return httpx.Response(500, json={"error": "unexpected"})
+
+    _install_mock_transport(monkeypatch, _handler)
+
+    result = await search_grammar("ghost")
+    results = cast(list[dict[str, object]], result["results"])
+
+    assert result["query"] == "ghost"
+    assert results == []
 
 
 @pytest.mark.asyncio
@@ -126,7 +261,11 @@ async def test_get_grammar_point_non_numeric_raises_clear_id_guidance(
 ) -> None:
     def _handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("Authorization") == "Token token=dummy"
-        if request.url.path == "/search/v1_1":
+        if request.url.path == "/search/reviewables_v1_1":
+            body = cast(dict[str, object], json.loads(request.content.decode("utf-8")))
+            assert body["options"] == {}
+            assert body["is_searching_grammar"] is True
+            assert body["is_searching_vocab"] is False
             return httpx.Response(500, json={"error": "failed"})
         return httpx.Response(404, json={"error": "not found"})
 
@@ -144,10 +283,15 @@ async def test_japanese_queries_are_passed_without_corruption(
 
     def _handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("Authorization") == "Token token=dummy"
-        if request.url.path == "/search/v1_1":
-            body = cast(dict[str, str], json.loads(request.content.decode("utf-8")))
-            seen_queries.append(body["query"])
-            return httpx.Response(200, json={"results": []})
+        if request.url.path == "/search/reviewables_v1_1":
+            body = cast(dict[str, object], json.loads(request.content.decode("utf-8")))
+            seen_queries.append(cast(str, body["query"]))
+            payload: dict[str, object] = {"query": body["query"], "meta": {}}
+            if body.get("is_searching_grammar"):
+                payload["grammar_points"] = {"data": []}
+            if body.get("is_searching_vocab"):
+                payload["vocabs"] = {"data": []}
+            return httpx.Response(200, json=payload)
         return httpx.Response(404, json={"error": "not found"})
 
     _install_mock_transport(monkeypatch, _handler)

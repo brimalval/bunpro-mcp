@@ -12,6 +12,8 @@ from src.api_client import (
     BunproNotFoundError,
     BunproUnexpectedStatusError,
 )
+
+# pyright: reportUnusedFunction=false
 from src.types.bunpro import (
     BunproSearchResponse,
     BunproUserStatsResponse,
@@ -21,7 +23,90 @@ from src.types.bunpro import (
 _SEARCH_RESULT_LIMIT: Final[int] = 40
 _MAX_SEARCH_RESULT_LIMIT: Final[int] = 50
 _VOCAB_DETAIL_PATH: Final[str] = "/reviewables/vocab"
-_SEARCH_PATH: Final[str] = "/search/v1_1"
+_SEARCH_PATH: Final[str] = "/search/reviewables_v1_1"
+
+
+def _build_search_request_body(
+    query: str, is_searching_grammar: bool, is_searching_vocab: bool
+) -> dict[str, object]:
+    return {
+        "query": query,
+        "options": {},
+        "is_searching_grammar": is_searching_grammar,
+        "is_searching_vocab": is_searching_vocab,
+    }
+
+
+def _first_string_value(value: object | None) -> str | None:
+    if isinstance(value, str) and value:
+        return value
+    if isinstance(value, list):
+        for item in cast(list[object], value):
+            if isinstance(item, str) and item:
+                return item
+    return None
+
+
+def _first_available_text(entry: dict[str, object], *keys: str) -> str | None:
+    for key in keys:
+        candidate = _first_string_value(entry.get(key))
+        if candidate:
+            return candidate
+    return None
+
+
+def _map_reviewable_hit(
+    entry: dict[str, object], default_type: str
+) -> dict[str, object]:
+    attributes = entry.get("attributes")
+    attr_dict = (
+        cast(dict[str, object], attributes) if isinstance(attributes, dict) else {}
+    )
+    slug = _first_available_text(attr_dict, "slug")
+    title = _first_available_text(attr_dict, "title", "name", "label") or slug
+    excerpt = _first_available_text(attr_dict, "meaning", "nuance_translation")
+    hit_id = entry.get("id")
+    meta: dict[str, object] = {"attributes": attr_dict}
+    if hit_id is not None:
+        meta["id"] = hit_id
+    return {
+        "id": hit_id,
+        "slug": slug,
+        "type": default_type,
+        "title": title,
+        "excerpt": excerpt,
+        "meta": meta,
+    }
+
+
+def _build_search_response(
+    payload: dict[str, object],
+    data_key: str,
+    default_type: str,
+    query: str,
+    error_message: str,
+) -> dict[str, object]:
+    container = payload.get(data_key)
+    if not isinstance(container, dict):
+        raise RuntimeError(error_message)
+    container_dict = cast(dict[str, object], container)
+    raw_data = container_dict.get("data")
+    if not isinstance(raw_data, list):
+        raise RuntimeError(error_message)
+    data_list = cast(list[object], raw_data)
+
+    hits: list[dict[str, object]] = []
+    for item in data_list:
+        if isinstance(item, dict):
+            hits.append(
+                _map_reviewable_hit(cast(dict[str, object], item), default_type)
+            )
+
+    meta = payload.get("meta")
+    meta_dict = cast(dict[str, object], meta) if isinstance(meta, dict) else {}
+    query_value = payload.get("query")
+    query_text = query_value if isinstance(query_value, str) else query
+    return {"query": query_text, "results": hits, "meta": meta_dict}
 
 
 @asynccontextmanager
@@ -235,21 +320,23 @@ async def search_vocab(
 
     limit = _normalize_limit(result_limit)
     async with _bunpro_client() as client:
-        try:
-            payload = await client.request_json(
-                "POST", _SEARCH_PATH, json={"query": query}
-            )
-        except BunproNotFoundError:
-            payload = await _search_vocab_fallback_payload(client, query)
-        except BunproUnexpectedStatusError as exc:
-            if not _is_search_fallback_error(exc):
-                raise
-            payload = await _search_vocab_fallback_payload(client, query)
+        payload = await client.request_json(
+            "POST",
+            _SEARCH_PATH,
+            json=_build_search_request_body(query, False, True),
+        )
 
     if not isinstance(payload, dict):
         raise RuntimeError("Unexpected Bunpro search payload shape")
 
-    trimmed_payload = _trim_results(cast(dict[str, object], payload), limit)
+    normalized_payload = _build_search_response(
+        cast(dict[str, object], payload),
+        "vocabs",
+        "vocab",
+        query,
+        "Unexpected Bunpro search payload shape",
+    )
+    trimmed_payload = _trim_results(normalized_payload, limit)
     try:
         validated = BunproSearchResponse.model_validate(trimmed_payload)
     except ValidationError as exc:

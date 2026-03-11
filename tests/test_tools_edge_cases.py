@@ -15,12 +15,21 @@ from src.tools.user_stats import get_srs_forecast, get_user_stats
 from src.tools.vocabulary import search_vocab
 
 
+def _vocab_reviewable(id_value: str, slug: str) -> dict[str, object]:
+    return {
+        "id": id_value,
+        "type": "vocab",
+        "attributes": {"slug": slug, "title": slug},
+    }
+
+
 def _install_mock_transport(
     monkeypatch: pytest.MonkeyPatch,
     handler: Callable[[httpx.Request], httpx.Response],
 ) -> None:
     real_async_client = httpx.AsyncClient
     monkeypatch.setenv("BUNPRO_JWT", "dummy")
+    monkeypatch.setenv("BUNPRO_FRONTEND_API_TOKEN", "dummy")
     monkeypatch.setenv("BUNPRO_API_BASE_URL", "http://test")
 
     def _mock_async_client(**kwargs: object) -> httpx.AsyncClient:
@@ -43,7 +52,9 @@ async def test_search_grammar_raises_for_invalid_results_type(
 
     _install_mock_transport(monkeypatch, _handler)
 
-    with pytest.raises(RuntimeError, match="Invalid Bunpro grammar search payload"):
+    with pytest.raises(
+        RuntimeError, match="Unexpected Bunpro grammar search payload shape"
+    ):
         _ = await search_grammar("〜ない")
 
 
@@ -101,13 +112,21 @@ async def test_search_vocab_clamps_result_limit_to_min_and_max(
 ) -> None:
     def _handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("Authorization") == "Token token=dummy"
-        if request.url.path == "/search/v1_1":
-            body = cast(dict[str, str], json.loads(request.content.decode("utf-8")))
+        if request.url.path == "/search/reviewables_v1_1":
+            body = cast(dict[str, object], json.loads(request.content.decode("utf-8")))
+            assert body["options"] == {}
+            assert body["is_searching_vocab"] is True
+            assert body["is_searching_grammar"] is False
             return httpx.Response(
                 200,
                 json={
                     "query": body["query"],
-                    "results": [{"slug": f"item-{i}"} for i in range(100)],
+                    "vocabs": {
+                        "data": [
+                            _vocab_reviewable(str(i), f"item-{i}") for i in range(100)
+                        ]
+                    },
+                    "meta": {},
                 },
             )
         return httpx.Response(404, json={"error": "not found"})
@@ -129,9 +148,17 @@ async def test_search_vocab_raises_for_invalid_search_payload(
 ) -> None:
     def _handler(_request: httpx.Request) -> httpx.Response:
         assert _request.headers.get("Authorization") == "Token token=dummy"
-        return httpx.Response(200, json={"results": "bad-results"})
+        if _request.url.path == "/search/reviewables_v1_1":
+            return httpx.Response(
+                200,
+                json={
+                    "query": "本",
+                    "vocabs": {"data": "bad-results"},
+                },
+            )
+        return httpx.Response(500, json={"error": "unexpected"})
 
     _install_mock_transport(monkeypatch, _handler)
 
-    with pytest.raises(RuntimeError, match="Invalid Bunpro search payload"):
+    with pytest.raises(RuntimeError, match="Unexpected Bunpro search payload shape"):
         _ = await search_vocab("本")
