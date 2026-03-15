@@ -3,6 +3,12 @@
 ## Overview
 This FastAPI/uvicorn server exposes the Bunpro MCP bundle to other agents via HTTP streaming at `/mcp`. It registers grammar, vocabulary, reading, user statistics, and review tools that proxy Bunpro API endpoints.
 
+This is a personal learning project built to:
+- Explore how MCP (Model Context Protocol) servers work
+- Assist with Japanese language study via Bunpro integration
+
+Not affiliated with Bunpro. Built for educational purposes.
+
 ## Requirements
 - Python 3.14 or later (matching Bunpro MCP dependencies)
 - Astral's `uv` CLI. Install it via `pip install uv` or follow https://github.com/astral-sh/uv, then run `uv sync` from the repo root before starting the server.
@@ -25,6 +31,39 @@ From the repo root, run the FastAPI app with the frontend API token on the same 
 
 ```
 BUNPRO_FRONTEND_API_TOKEN=your_frontend_api_token_here uv run server.py
+```
+
+## Using OpenCode (MCP client)
+[OpenCode](https://opencode.ai) can connect to this server as an MCP client. The server runs at `http://127.0.0.1:8000/mcp` by default.
+
+### Setup
+1. Install OpenCode (see [OpenCode docs](https://opencode.ai/docs))
+2. Use `.env.example` to create a `.env` file with your Bunpro API token
+3. Start the MCP server:
+   ```bash
+   uv --env-file .env run server.py
+   ```
+4. Configure OpenCode to connect to the server. Add to your `opencode.jsonc`:
+   ```jsonc
+   {
+     "mcpServers": {
+       "bunpro": {
+         "url": "http://127.0.0.1:8000/mcp"
+       }
+     }
+   }
+   ```
+5. Run `opencode` and start chatting with access to Bunpro tools
+
+### Optional: Bunpro Tutor Agent
+This repo includes a pre-configured agent at `.opencode/agent/bunpro-tutor.md` that provides Japanese tutoring assistance. To use it:
+1. Ensure the `.opencode/` directory is in your project
+2. In OpenCode, switch to the **bunpro-tutor** agent
+3. Ask questions about your Japanese study progress
+
+Example prompt:
+```
+I'm currently reviewing. Why is 行きませんか used instead of 行きましょうか here?
 ```
 
 ## Inspecting tools with MCP Inspector
@@ -162,26 +201,38 @@ Replace `your_frontend_api_token_here` with the value you exported (and keep it 
   asyncio.run(main())
   PY
   ```
-- `get_review_queue()`
+- `get_study_configuration()`
   ```bash
   uv run python - <<'PY'
   import asyncio
-  from src.tools.review import get_review_queue
+  from src.tools.review import get_study_configuration
 
   async def main():
-      print(await get_review_queue())
+      print(await get_study_configuration())
 
   asyncio.run(main())
   PY
   ```
-- `get_due_items()`
+- `get_due_count()`
   ```bash
   uv run python - <<'PY'
   import asyncio
-  from src.tools.review import get_due_items
+  from src.tools.review import get_due_count
 
   async def main():
-      print(await get_due_items())
+      print(await get_due_count())
+
+  asyncio.run(main())
+  PY
+  ```
+- `get_pending_reviews()`
+  ```bash
+  uv run python - <<'PY'
+  import asyncio
+  from src.tools.review import get_pending_reviews
+
+  async def main():
+      print(await get_pending_reviews())
 
   asyncio.run(main())
   PY
